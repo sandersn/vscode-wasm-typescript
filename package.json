@@ -1,0 +1,32 @@
+{
+  "name": "vscode-wasm-typescript",
+  "version": "0.1.0",
+  "description": "Language server host for typescript using vscode's sync-api in the browser",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sandersn/vscode-wasm-typescript.git"
+  },
+  "keywords": [
+    "typescript",
+    "vscode",
+    "browser",
+    "host"
+  ],
+  "author": "Nathan Shively-Sandersn",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/sandersn/vscode-wasm-typescript/issues"
+  },
+  "homepage": "https://github.com/sandersn/vscode-wasm-typescript#readme",
+  "dependencies": {
+    "@vscode/sync-api-client": "^0.2.0",
+    "@vscode/sync-api-common": "^0.2.0",
+    "@vscode/sync-api-service": "^0.2.0",
+    "typescript": "^4.8.2",
+    "vscode-uri": "^3.0.3"
+  }
+}
