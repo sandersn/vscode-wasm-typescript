@@ -40,6 +40,7 @@ export function createServerHost(apiClient: ApiClient, args: string[]): ts.serve
         // gc?(): void {}, // afaict this isn't available in the browser
         trace: console.log,
         // require?(initialPath: string, moduleName: string): ModuleImportResult {},
+        // TODO: This definitely needs to be imlemented
         // importServicePlugin?(root: string, moduleName: string): Promise<ModuleImportResult> {},
         // System
         args,
@@ -62,7 +63,8 @@ export function createServerHost(apiClient: ApiClient, args: string[]): ts.serve
             const uri = Utils.joinPath(root, path)
             apiClient.vscode.workspace.fileSystem.writeFile(uri, new TextEncoder().encode(data))
         },
-        // TODO: Find out what this is supposed to do
+        // TODO: base this on WebSErverHost version (webserver/webserver.ts)
+        // 
         resolvePath(path: string): string {
             return path
         },
@@ -218,6 +220,8 @@ export function startSession(options: StartSessionOptions, logger: ts.server.Log
         .listen()
 }
  // TODO: better logger
+// the better logger will also need the webhost because it will post messages to vscode for logging purposes
+// beasicaly the same as our existing web logger
 const trivialLogger: ts.server.Logger = {
     close: () => {},
     hasLevel: () => false,
@@ -231,7 +235,7 @@ const trivialLogger: ts.server.Logger = {
 }
 function initializeSession(args: string[], platform: string): void {
     const cancellationToken = ts.server.nullCancellationToken // TODO: Switch to real cancellation when it's done
-    const serverMode = ts.LanguageServiceMode.Semantic
+    const serverMode = ts.LanguageServiceMode.Semantic // TODO: First test this as PartialSemantic -- realpath, modifiedtime, resolvepath needed for Sematnic
     const unknownServerMode = undefined
     trivialLogger.info(`Starting TS Server`);
     trivialLogger.info(`Version: 0.0.0`);
