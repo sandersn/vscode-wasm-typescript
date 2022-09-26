@@ -3,6 +3,7 @@
         "strict": true,
         "declaration": true,
         "outDir": "dist",
+        "module": "commonjs",
         "target": "esnext",
         "moduleResolution": "node",
         "lib": ["esnext", "webworker"]

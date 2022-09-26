@@ -269,12 +269,13 @@ function findArgument(args: readonly string[], name: string): string | undefined
         ? args[index + 1]
         : undefined;
 }
-const listener = (e: any) => {
-    removeEventListener("message", listener)
-    const args = e.data
-    initializeSession(args, "web-sync-api")
-}
-addEventListener("message", listener) // this is *probably* wrong? but maybe not since vs code will want to invoke us the same way as normal tsserver
+// TODO: Disabled for now while I make sure that requiring all this code in tsserver.web.js doesn't break anything.
+// const listener = (e: any) => {
+//     removeEventListener("message", listener)
+//     const args = e.data
+//     initializeSession(args, "web-sync-api")
+// }
+// addEventListener("message", listener) // this is *probably* wrong? but maybe not since vs code will want to invoke us the same way as normal tsserver
 
 // 1. add an event listener named "message", has to do with webworkers
 // 2. when vscode calls postMessage (DedicatedWorkerGlobalScope.postMessage? some channel.postMessage?), pass its data as args to initialiseSession

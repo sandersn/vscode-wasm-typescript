@@ -1,6 +1,6 @@
 {
   "name": "vscode-wasm-typescript",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Language server host for typescript using vscode's sync-api in the browser",
   "main": "dist/index.js",
   "scripts": {
