@@ -3,7 +3,7 @@ import { ApiClient, APIRequests, FileType } from '@vscode/sync-api-client';
 import { ClientConnection, DTOs } from '@vscode/sync-api-common/browser';
 import { Utils, URI } from 'vscode-uri';
 let listener: (e: any) => Promise<void>;
-export function createServerHost(logger: ts.server.Logger, apiClient: ApiClient, args: string[]): ts.server.ServerHost {
+export function createServerHost(logger: ts.server.Logger & ((x: any) => void), apiClient: ApiClient, args: string[]): ts.server.ServerHost {
     logger.info('starting to create serverhost...')
     const root = apiClient.vscode.workspace.workspaceFolders[0].uri
     logger.info('successfully read ' + root + " uri from apiClient's workspace folders")
@@ -13,37 +13,37 @@ export function createServerHost(logger: ts.server.Logger, apiClient: ApiClient,
          */
         watchFile(path: string, callback: ts.FileWatcherCallback, pollingInterval?: number, options?: ts.WatchOptions): ts.FileWatcher {
             // I don't think this works yet
-            console.log('calling watchFile')
+            logger.info('calling watchFile')
             return null as never
         },
         watchDirectory(path: string, callback: ts.DirectoryWatcherCallback, recursive?: boolean, options?: ts.WatchOptions): ts.FileWatcher {
             // same
-            console.log('calling watchDirectory')
+            logger.info('calling watchDirectory')
             return null as never
         },
         setTimeout(callback: (...args: any[]) => void, ms: number, ...args: any[]): any {
-            console.log('calling setTimeout')
+            logger.info('calling setTimeout')
             return setTimeout(callback, ms, ...args)
         },
         clearTimeout(timeoutId: any): void {
-            console.log('calling clearTimeout')
+            logger.info('calling clearTimeout')
             clearTimeout(timeoutId)
         },
         setImmediate(callback: (...args: any[]) => void, ...args: any[]): any {
-            console.log('calling setImmediate')
+            logger.info('calling setImmediate')
             // TODO: This isn't actually in the DOM?
             // MDN gives a few ways to emulate it: https://developer.mozilla.org/en-US/docs/Web/API/Window/setImmediate#notes
             // setImmediate(callback, ...args)
             return this.setTimeout(callback, 0, ...args)
         },
         clearImmediate(timeoutId: any): void {
-            console.log('calling clearImmediate')
+            logger.info('calling clearImmediate')
             // TODO: This isn't actually in the DOM?
             // clearImmediate(timeoutId)
             this.clearTimeout(timeoutId)
         },
         // gc?(): void {}, // afaict this isn't available in the browser
-        trace: console.log,
+        trace: logger.info,
         // require?(initialPath: string, moduleName: string): ModuleImportResult {},
         // TODO: This definitely needs to be imlemented
         // importServicePlugin?(root: string, moduleName: string): Promise<ModuleImportResult> {},
@@ -55,13 +55,15 @@ export function createServerHost(logger: ts.server.Logger, apiClient: ApiClient,
         writeOutputIsTTY(): boolean { return true }, // TODO: Maybe
         // getWidthOfTerminal?(): number {},
         readFile(path) {
-            console.log('calling readFile')
+            logger.info('calling readFile')
             // [x] need to use the settings recommended by Sheetal
             // [x] ProjectService always requests a typesMap.json at the cwd
             // [ ] sync-api-client says fs is rooted at memfs:/sample-folder; the protocol 'memfs:' is confusing our file parsing I think
             // [x] messages aren't actually coming through, just the message from the first request
             //     - fixed by simplifying the listener setup for now
-            // [ ] once messages work, you can probably log by postMessage({ type: 'log', body: "some logging text" })
+            // [x] once messages work, you can probably log by postMessage({ type: 'log', body: "some logging text" })
+            // [ ] implement methods Sheetal says are needed for semantic mode, then turn semantic mode on
+            // [ ] maybe implement all the others?
             try {
                 const uri = URI.file(path) // Utils.joinPath(root, path)
                 try {
@@ -72,63 +74,63 @@ export function createServerHost(logger: ts.server.Logger, apiClient: ApiClient,
                     }
                     catch (e) {
                         logger.info(`Error new TextDecoder().decode: ${e}`)
-                        console.log(e)
+                        logger(e)
                     }
                 }
                 catch (e) {
                     logger.info(`Error apiClient...readFile: ${e}`)
-                    console.log(e)
+                    logger(e)
                 }
             }
             catch (e) {
                 logger.info(`Error Utils.joinPath(root(), path): ${e}`)
-                console.log(e)
+                logger(e)
             }
         },
         getFileSize(path) {
-            console.log('calling getFileSize')
+            logger.info('calling getFileSize')
             const uri = Utils.joinPath(root, path)
             const stat = apiClient.vscode.workspace.fileSystem.stat(uri)
             return stat.size
         },
         writeFile(path, data) {
-            console.log('calling writeFile')
+            logger.info('calling writeFile')
             const uri = Utils.joinPath(root, path)
             apiClient.vscode.workspace.fileSystem.writeFile(uri, new TextEncoder().encode(data))
         },
         // TODO: base this on WebSErverHost version (webserver/webserver.ts)
         // 
         resolvePath(path: string): string {
-            console.log('calling resolvePath')
+            logger.info('calling resolvePath')
             return path
         },
         fileExists(path: string): boolean {
-            console.log('calling fileExists')
+            logger.info('calling fileExists')
             const uri = Utils.joinPath(root, path)
             const stat = apiClient.vscode.workspace.fileSystem.stat(uri)
             return stat.type === FileType.File // TODO: Might be correct! (need to read the code to figure out how to use it)
         },
         directoryExists(path: string): boolean {
-            console.log('calling directoryExists')
+            logger.info('calling directoryExists')
             const uri = Utils.joinPath(root, path)
             const stat = apiClient.vscode.workspace.fileSystem.stat(uri)
             return stat.type === FileType.Directory // TODO: Might be correct! (need to read the code to figure out how to use it)
         },
         createDirectory(path: string): void {
-            console.log('calling createDirectory')
+            logger.info('calling createDirectory')
             const uri = Utils.joinPath(root, path)
             apiClient.vscode.workspace.fileSystem.createDirectory(uri)
         },
         getExecutingFilePath(): string {
-            console.log('calling getExecutingFilePath')
+            logger.info('calling getExecutingFilePath')
             return root.toString() // TODO: Might be correct!
         },
         getCurrentDirectory(): string {
-            console.log('calling getCurrentDirectory')
+            logger.info('calling getCurrentDirectory')
             return root.toString() // TODO: Might be correct!
         },
         getDirectories(path: string): string[] {
-            console.log('calling getDirectories')
+            logger.info('calling getDirectories')
             const uri = Utils.joinPath(root, path)
             const entries = apiClient.vscode.workspace.fileSystem.readDirectory(uri)
             // TODO: FileType is from sync-api-client and *happens* to be the same as DTOs.FileType from sync-api-common/browser. Not sure how reliable that correspondence is though.
@@ -139,7 +141,7 @@ export function createServerHost(logger: ts.server.Logger, apiClient: ApiClient,
          * For example, I have NO idea how to easily support `depth`
         */
         readDirectory(path: string, extensions?: readonly string[], exclude?: readonly string[], include?: readonly string[], depth?: number): string[] {
-            console.log('calling readDirectory')
+            logger.info('calling readDirectory')
             const uri = Utils.joinPath(root, path)
             const entries = apiClient.vscode.workspace.fileSystem.readDirectory(uri)
             return entries
@@ -147,14 +149,14 @@ export function createServerHost(logger: ts.server.Logger, apiClient: ApiClient,
                 .map(([e,_]) => e)
         },
         getModifiedTime(path: string): Date | undefined {
-            console.log('calling getModifiedTime')
+            logger.info('calling getModifiedTime')
             const uri = Utils.joinPath(root, path)
             const stat = apiClient.vscode.workspace.fileSystem.stat(uri)
             return new Date(stat.mtime)
         },
         // setModifiedTime?(path: string, time: Date): void {}, // TODO: This seems like a bad idea!
         deleteFile(path: string): void {
-            console.log('calling deleteFile')
+            logger.info('calling deleteFile')
             const uri = Utils.joinPath(root, path)
             apiClient.vscode.workspace.fileSystem.delete(uri)
         },
@@ -166,7 +168,7 @@ export function createServerHost(logger: ts.server.Logger, apiClient: ApiClient,
         // createSHA256Hash?(data: string): string { },
         // getMemoryUsage?(): number {},
         exit(exitCode?: number): void {
-            console.log("EXCITING!" + exitCode)
+            logger.info("EXCITING!" + exitCode)
             removeEventListener("message", listener) // TODO: Not sure this is right (and there might be other cleanup)
         },
         // realpath?(path: string): string {}, // TODO: Find out what this is supposed to do
@@ -176,7 +178,7 @@ export function createServerHost(logger: ts.server.Logger, apiClient: ApiClient,
     }
 }
 
-export function createWebSystem(connection: ClientConnection<APIRequests>, logger: ts.server.Logger) {
+export function createWebSystem(connection: ClientConnection<APIRequests>, logger: ts.server.Logger & ((x: any) => void)) {
     logger.info("in createWebSystem")
     const sys = createServerHost(logger, new ApiClient(connection), [])
     ;(ts as any).setSys(sys)
@@ -193,7 +195,6 @@ type StartSessionOptions = Pick<ts.server.SessionOptions, "globalPlugins" | "plu
 class WorkerSession extends ts.server.Session<{}> {
     constructor(
         host: ts.server.ServerHost,
-        private webHost: { writeMessage(s: any): void },
         options: StartSessionOptions,
         logger: ts.server.Logger,
         cancellationToken: ts.server.ServerCancellationToken,
@@ -211,10 +212,6 @@ class WorkerSession extends ts.server.Session<{}> {
         });
         this.logger.info('done constructing WorkerSession')
     }
-
-    // TODO: according to Sheetal,
-    // session needs onMessage and writeMessage to handle requests and responses
-    // (I *think* this does, but I'm not sure)
     public send(msg: ts.server.protocol.Message) {
         if (msg.type === "event" && !this.canUseEvents) {
             if (this.logger.hasLevel(ts.server.LogLevel.verbose)) {
@@ -225,27 +222,24 @@ class WorkerSession extends ts.server.Session<{}> {
         if (this.logger.hasLevel(ts.server.LogLevel.verbose)) {
             this.logger.info(`${msg.type}:${indent(JSON.stringify(msg))}`);
         }
-        this.webHost.writeMessage(msg);
+        postMessage(msg);
     }
-
     protected parseMessage(message: {}): ts.server.protocol.Request {
         return message as ts.server.protocol.Request;
     }
-
     protected toStringMessage(message: {}) {
         return JSON.stringify(message, undefined, 2);
     }
-
     exit() {
         this.logger.info("Exiting...");
         this.projectService.closeLog();
         close();
     }
-    // TODO: Unused right now, but should be soon
-    listen() {
-        this.logger.info('starting to listen for messages on "message"...')
-        addEventListener("message", (message: any) => {
-            this.logger.info('got message')
+    // TODO: Unused right now, but maybe someday
+    listen(port: MessagePort) {
+        this.logger.info('SHOULD BE UNUSED: starting to listen for messages on "message"...')
+        port.addEventListener("message", (message: any) => {
+            this.logger.info(`got message ${JSON.stringify(message.data)}`)
             this.onMessage(message.data);
         });
     }
@@ -266,32 +260,47 @@ function hrtime(previous?: number[]) {
     }
     return [seconds, nanoseconds];
 }
-export function startSession(options: StartSessionOptions, connection: ClientConnection<APIRequests>, logger: ts.server.Logger, cancellationToken: ts.server.ServerCancellationToken) {
-    session = new WorkerSession(createWebSystem(connection, logger), { writeMessage: (x: any) => { console.log("posting message", JSON.stringify(x)); postMessage(x) } }, options, logger, cancellationToken, hrtime)
+export function startSession(options: StartSessionOptions, connection: ClientConnection<APIRequests>, logger: ts.server.Logger & ((x: any) => void), cancellationToken: ts.server.ServerCancellationToken) {
+    session = new WorkerSession(createWebSystem(connection, logger), options, logger, cancellationToken, hrtime)
 }
- // TODO: better logger
-// the better logger will also need the webhost because it will post messages to vscode for logging purposes (see notes above)
-// beasicaly the same as our existing web logger
-const trivialLogger: ts.server.Logger = {
+// Note: unused because I'm not looking at the console that much right now
+const doubleLogger: ts.server.Logger = {
     close: () => {},
     hasLevel: () => false,
     loggingEnabled: () => true,
     perftrc: () => {},
-    info: console.log,
-    msg: console.log,
+    info(s) {
+        console.log(s)
+        postMessage({ type: "log", body: s + '\n' })
+    },
+    msg(s) {
+        console.log(s)
+        postMessage({ type: "log", body: s + '\n' })
+    },
     startGroup: () => {},
     endGroup: () => {},
     getLogFileName: () => undefined,
 }
+
+const serverLogger: ts.server.Logger & ((x: any) => void) = (x: any) => postMessage({ type: "log", body: JSON.stringify(x) + '\n' }) as any
+serverLogger.close = () => {}
+serverLogger.hasLevel = () => false
+serverLogger.loggingEnabled = () => true
+serverLogger.perftrc = () => {}
+serverLogger.info = s => postMessage({ type: "log", body: s + '\n' })
+serverLogger.msg = s => postMessage({ type: "log", body: s + '\n' })
+serverLogger.startGroup = () => {}
+serverLogger.endGroup = () => {}
+serverLogger.getLogFileName = () => "tsserver.log"
 function initializeSession(args: string[], platform: string, connection: ClientConnection<APIRequests>): void {
     const cancellationToken = ts.server.nullCancellationToken // TODO: Switch to real cancellation when it's done
     const serverMode = ts.LanguageServiceMode.PartialSemantic // TODO: Later test this as Semantic -- realpath, modifiedtime, resolvepath needed for Semantic
     const unknownServerMode = undefined
-    trivialLogger.info(`Starting TS Server`);
-    trivialLogger.info(`Version: 0.0.0`);
-    trivialLogger.info(`Arguments: ${args.join(" ")}`);
-    trivialLogger.info(`Platform: ${platform} CaseSensitive: true`);
-    trivialLogger.info(`ServerMode: ${serverMode} syntaxOnly: false hasUnknownServerMode: ${unknownServerMode}`);
+    serverLogger.info(`Starting TS Server`);
+    serverLogger.info(`Version: 0.0.0`);
+    serverLogger.info(`Arguments: ${args.join(" ")}`);
+    serverLogger.info(`Platform: ${platform} CaseSensitive: true`);
+    serverLogger.info(`ServerMode: ${serverMode} syntaxOnly: false hasUnknownServerMode: ${unknownServerMode}`);
     startSession({
             globalPlugins: findArgumentStringArray(args, "--globalPlugins"),
             pluginProbeLocations: findArgumentStringArray(args, "--pluginProbeLocations"),
@@ -304,7 +313,7 @@ function initializeSession(args: string[], platform: string, connection: ClientC
             serverMode
         },
         connection,
-        trivialLogger,
+        serverLogger,
         cancellationToken);
 }
 function findArgumentStringArray(args: readonly string[], name: string): readonly string[] {
@@ -334,9 +343,9 @@ listener = async (e: any) => {
     }
     await init // TODO: Not strictly necessary since I can check session instead
     // TODO: Instead of reusing this listener and passing its messages on to session.onMessage, I could receive another port
-    // in the setup message and have session listen on that instead.
+    // in the setup message and have session listen on that instead. Might make it easier to disconnect an existing tsserver's web host.
     if (!!session) {
-        trivialLogger.info(`got message ${e.data}`)
+        serverLogger.info(`got message ${JSON.stringify(e.data)}`)
         session.onMessage(e.data)
     }
     else {
