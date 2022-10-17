@@ -5,25 +5,53 @@ import { Utils, URI } from 'vscode-uri';
 let listener: (e: any) => Promise<void>;
 let watchFiles: Map<string, { path: string, callback: ts.FileWatcherCallback, pollingInterval?: number, options?: ts.WatchOptions }> = new Map();
 let watchDirectories: Map<string, { path: string, callback: ts.DirectoryWatcherCallback, recursive?: boolean, options?: ts.WatchOptions }> = new Map();
+function callWatcher(event: "create" | "change" | "delete", path: string, logger: ts.server.Logger) {
+    logger.info(`checking for watch on ${path}: event=${event}`)
+    const kind = event === 'create' ? ts.FileWatcherEventKind.Created
+        : event === 'change' ? ts.FileWatcherEventKind.Changed
+        : event === 'delete' ? ts.FileWatcherEventKind.Deleted
+        : ts.FileWatcherEventKind.Changed;
+    if (watchFiles.has(path)) {
+        logger.info("file watcher found for " + path)
+        watchFiles.get(path)!.callback(path, kind) // TODO: Might need to have first arg be watchFiles.get(path).path
+    }
+    for (const watch of Array.from(watchDirectories.keys()).filter(dir => path.startsWith(dir))) {
+        logger.info(`directory watcher on ${watch} found for ${path}`)
+        watchDirectories.get(watch)!.callback(path)
+    }
+}
+/**
+ * Find the first ^ anywhere in the path and delete ^/scheme/authority from that position
+ */
+function trimHat(path: string) {
+    const i = path.indexOf("^")
+    if (i > -1) {
+        return path.replace(/\^\/[0-9A-Za-z-]+\/[0-9A-Za-z-]+/, '').replace(/\/\//, '/')
+    }
+    return path
+}
 export function createServerHost(logger: ts.server.Logger & ((x: any) => void), apiClient: ApiClient, args: string[]): ts.server.ServerHost {
-    logger.info('starting to create serverhost...')
-    const root = apiClient.vscode.workspace.workspaceFolders[0].uri
+    const scheme = apiClient.vscode.workspace.workspaceFolders[0].uri.scheme
+    // TODO: Now see which uses of vfsroot need to become serverroot
+    const root = apiClient.vscode.workspace.workspaceFolders[0].uri.path
     const fs = apiClient.vscode.workspace.fileSystem
-    logger.info('successfully read ' + root + " uri from apiClient's workspace folders")
+    logger.info(`starting serverhost with scheme ${scheme} and root ${root}`)
     return {
         /**
          * @param pollingInterval ignored in native filewatchers; only used in polling watchers
          */
         watchFile(path: string, callback: ts.FileWatcherCallback, pollingInterval?: number, options?: ts.WatchOptions): ts.FileWatcher {
-            logger.info('calling watchFile on ' + path + (watchFiles.has(path) ? ' (OLD)' : ' (new)'))
-            watchFiles.set(path, { path, callback, pollingInterval, options })
+            const p = trimHat(path)
+            logger.info(`calling watchFile on ${path} (${p}) (${watchFiles.has(p) ? 'OLD' : 'new'})`)
+            watchFiles.set(p, { path: p, callback, pollingInterval, options })
             return { close() {
                 watchFiles.delete(path)
             } }
         },
         watchDirectory(path: string, callback: ts.DirectoryWatcherCallback, recursive?: boolean, options?: ts.WatchOptions): ts.FileWatcher {
-            logger.info('calling watchDirectory on ' + path + (watchDirectories.has(path) ? ' (OLD)' : ' (new)'))
-            watchDirectories.set(path, { path, callback, recursive, options })
+            const p = trimHat(path)
+            logger.info(`calling watchDirectory on ${path} (${p}) (${watchDirectories.has(p) ? 'OLD' : 'new'})`)
+            watchDirectories.set(path, { path: p, callback, recursive, options })
             return {
                 close() {
                     watchDirectories.delete(path)
@@ -63,19 +91,20 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
         writeOutputIsTTY(): boolean { return true }, // TODO: Maybe
         // getWidthOfTerminal?(): number {},
         readFile(path) {
-            logger.info('calling readFile on ' + path)
-            // [ ] need to update 0.2 -> 0.7.* API (once it's working properly)
-            // [ ] including reshuffling the webpack hack if needed
+            // [x] need to update 0.2 -> 0.7.* API (once it's working properly)
+            // [x] including reshuffling the webpack hack if needed
             // [x] need to use the settings recommended by Sheetal
             // [x] ProjectService always requests a typesMap.json at the cwd
-            // [ ] sync-api-client says fs is rooted at memfs:/sample-folder; the protocol 'memfs:' is confusing our file parsing I think
+            // [x] sync-api-client says fs is rooted at memfs:/sample-folder; the protocol 'memfs:' is confusing our file parsing I think
+            // [ ] nothing ever seems to find tsconfig.json
+            // [ ] diagnostic messages look correct, but no error highlights show up
             // [x] messages aren't actually coming through, just the message from the first request
             //     - fixed by simplifying the listener setup for now
             // [x] once messages work, you can probably log by postMessage({ type: 'log', body: "some logging text" })
             // [x] implement realpath, modifiedtime, resolvepath, then turn semantic mode on
             // [ ] maybe implement all the others?
             // [ ] cancellation
-            // [ ] file watching implemented with saved map of filename to callback, and forwarding
+            // [x] file watching implemented with saved map of filename to callback, and forwarding
 
             // messages received by extension AND host use paths like ^/memfs/ts-nul-authority/sample-folder/file.ts
             // - problem: pretty sure the extension doesn't know what to do with that: it's not putting down error spans in file.ts
@@ -90,8 +119,19 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
             //     same for watchDirectory
             //     watchDirectory with /sample-folder/^ and directoryExists with /sample-folder/^/memfs/ts-nul-authority/sample-folder/workspaces/
             //     watchFile with /sample-folder/memfs:/sample-folder/memfs:/lib.es2020.full.d.ts
+
+            // LATER:
+            // OK, so the paths that tsserver has look like this: ^/scheme/mount/whatever.ts
+            // but the paths the filesystem has look like this: scheme:/whatever.ts (not sure about 'mount', that's only when cloning from the fs)
+            // so you have to shave off the scheme that the host combined with the path and put on the scheme that the vfs is using.
+
+            // LATER 2:
+            // Some commands ask for getExecutingFilePath or getCurrentDirectory and cons up a path themselves.
+            // This works, because URI.from({ scheme, path }) matches what the fs has in it
+            // Problem: In *some* messages (all?), vscode then refers to /x.ts and ^/vscode-test-web/mount/x.ts (or ^/memfs/ts-nul-authority/x.ts)
             try {
-                const bytes = fs.readFile(URI.from({ scheme: "memfs", path }))
+                logger.info('calling readFile on ' + path)
+                const bytes = fs.readFile(URI.from({ scheme, path: trimHat(path) }))
                 return new TextDecoder().decode(new Uint8Array(bytes).slice()) // TODO: Not sure why `bytes.slice()` isn't as good as `new Uint8Array(bytes).slice()`
                 // (common/connection.ts says that Uint8Array is only a view on the bytes which could change, which is why the slice exists)
             }
@@ -101,9 +141,9 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
             }
         },
         getFileSize(path) {
-            logger.info('calling getFileSize on ' + path)
             try {
-                return fs.stat(URI.from({ scheme: "memfs", path })).size
+                logger.info('calling getFileSize on ' + path)
+                return fs.stat(URI.from({ scheme, path })).size
             }
             catch (e) {
                 logger.info(`Error fs.getFileSize`)
@@ -112,9 +152,9 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
             }
         },
         writeFile(path, data) {
-            logger.info('calling writeFile on ' + path)
             try {
-                fs.writeFile(URI.from({ scheme: "memfs", path }), new TextEncoder().encode(data))
+                logger.info('calling writeFile on ' + path)
+                fs.writeFile(URI.from({ scheme, path }), new TextEncoder().encode(data))
             }
             catch (e) {
                 logger.info(`Error fs.writeFile`)
@@ -127,34 +167,34 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
             return path
         },
         fileExists(path: string): boolean {
-            logger.info('calling fileExists on ' + path)
             try {
+                logger.info(`calling fileExists on ${path} (as ${URI.from({ scheme, path: trimHat(path) })})`)
                 // TODO: FileType.File might be correct! (need to learn about vscode's FileSystem.stat)
-                return fs.stat(URI.from({ scheme: "memfs", path })).type === FileType.File
+                return fs.stat(URI.from({ scheme, path: trimHat(path) })).type === FileType.File
             }
             catch (e) {
-                logger.info(`Error fs.fileExists`)
+                logger.info(`Error fs.fileExists for ${path}`)
                 logger(e)
                 return false
             }
         },
         directoryExists(path: string): boolean {
-            logger.info('calling directoryExists on ' + path)
             try {
+                logger.info(`calling directoryExists on ${path} (as ${URI.from({ scheme, path: trimHat(path) })})`)
                 // TODO: FileType.Directory might be correct! (need to learn about vscode's FileSystem.stat)
-                return fs.stat(URI.from({ scheme: "memfs", path })).type === FileType.Directory
+                return fs.stat(URI.from({ scheme, path: trimHat(path) })).type === FileType.Directory
             }
             catch (e) {
-                logger.info(`Error fs.directoryExists`)
+                logger.info(`Error fs.directoryExists for ${path}`)
                 logger(e)
                 return false
             }
         },
         createDirectory(path: string): void {
-            logger.info('calling createDirectory on ' + path)
             try {
+                logger.info(`calling createDirectory on ${path} (as ${URI.from({ scheme, path: trimHat(path) })})`)
                 // TODO: FileType.Directory might be correct! (need to learn about vscode's FileSystem.stat)
-                fs.createDirectory(URI.from({ scheme: "memfs", path }))
+                fs.createDirectory(URI.from({ scheme, path: trimHat(path) }))
             }
             catch (e) {
                 logger.info(`Error fs.createDirectory`)
@@ -163,16 +203,16 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
         },
         getExecutingFilePath(): string {
             logger.info('calling getExecutingFilePath')
-            return root.toString() // TODO: Might be correct!
+            return root // TODO: Might be correct!
         },
         getCurrentDirectory(): string {
             logger.info('calling getCurrentDirectory')
-            return root.toString() // TODO: Might be correct!
+            return root // TODO: Might be correct!
         },
         getDirectories(path: string): string[] {
-            logger.info('calling getDirectories on ' + path)
             try {
-                const entries = fs.readDirectory(URI.from({ scheme: "memfs", path }))
+                logger.info('calling getDirectories on ' + path)
+                const entries = fs.readDirectory(URI.from({ scheme, path }))
                 return entries.filter(([_,type]) => type === FileType.Directory).map(([f,_]) => f)
             }
             catch (e) {
@@ -187,12 +227,12 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
          * Note: webServer.ts comments say this is used for configured project and typing installer.
          */
         readDirectory(path: string, extensions?: readonly string[], exclude?: readonly string[], include?: readonly string[], depth?: number): string[] {
-            logger.info('calling readDirectory on ' + path)
             try {
-            const entries = fs.readDirectory(URI.from({ scheme: "memfs", path }))
-            return entries
-                .filter(([f,type]) => type === FileType.File && (!extensions || extensions.some(ext => f.endsWith(ext))) && (!exclude || !exclude.includes(f)))
-                .map(([e,_]) => e)
+                logger.info('calling readDirectory on ' + path)
+                const entries = fs.readDirectory(URI.from({ scheme, path }))
+                return entries
+                    .filter(([f,type]) => type === FileType.File && (!extensions || extensions.some(ext => f.endsWith(ext))) && (!exclude || !exclude.includes(f)))
+                    .map(([e,_]) => e)
             }
             catch (e) {
                 logger.info(`Error fs.readDirectory`)
@@ -201,9 +241,9 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
             }
         },
         getModifiedTime(path: string): Date | undefined {
-            logger.info('calling getModifiedTime on ' + path)
             try {
-                return new Date(fs.stat(URI.from({ scheme: "memfs", path })).mtime)
+                logger.info('calling getModifiedTime on ' + path)
+                return new Date(fs.stat(URI.from({ scheme, path })).mtime)
             }
             catch (e) {
                 logger.info(`Error fs.getModifiedTime`)
@@ -216,9 +256,9 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
             // But I don't have any idea of how to set the modified time to an arbitrary date!
         },
         deleteFile(path: string): void {
-            const uri = URI.from({ scheme: "memfs", path })
-            logger.info(`calling deleteFile on ${uri}`)
+            const uri = URI.from({ scheme, path })
             try {
+                logger.info(`calling deleteFile on ${uri}`)
                 fs.delete(uri)
             }
             catch (e) {
@@ -240,10 +280,11 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
         /** webServer comments this out and says "module resolution, symlinks"
          * I don't think we support symlinks yet but module resolution should work */
         realpath(path: string): string {
-            const parts = [...root.path.split('/'), ...path.split('/')]
+            const parts = [...root.split('/'), ...trimHat(path).split('/')]
             const out = []
             for (const part of parts) {
                 switch (part) {
+                    case '':
                     case '.':
                         break;
                     case '..':
@@ -254,7 +295,8 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
                         out.push(part)
                 }
             }
-            return out.join('/')
+            logger.info(`realpath: resolved ${path} (${trimHat(path)}) to ${'/' + out.join('/')}`)
+            return '/' + out.join('/')
         },
         // clearScreen?(): void { },
         // base64decode?(input: string): string {},
@@ -393,7 +435,7 @@ function initializeSession(args: string[], platform: string, connection: ClientC
             useInferredProjectPerProjectRoot: hasArgument(args, "--useInferredProjectPerProjectRoot"),
             suppressDiagnosticEvents: hasArgument(args, "--suppressDiagnosticEvents"),
             noGetErrOnBackgroundUpdate: hasArgument(args, "--noGetErrOnBackgroundUpdate"),
-            syntaxOnly: true, // TODO: Later test this as false,
+            syntaxOnly: false,
             serverMode
         },
         connection,
@@ -430,8 +472,14 @@ listener = async (e: any) => {
     // in the setup message and have session listen on that instead. Might make it easier to disconnect an existing tsserver's web host.
     if (!!session) {
         serverLogger.info(`host got: ${JSON.stringify(e.data)}`)
-        // TODO: for file watching, intercept the messages here and call the stored callback in an async way
-        session.onMessage(e.data)
+        if (e.data.type === 'watch') {
+            // call watcher
+            callWatcher(e.data.event, e.data.path, serverLogger)
+        }
+        else {
+            // TODO: for file watching, intercept the messages here and call the stored callback in an async way
+            session.onMessage(e.data)
+        }
     }
     else {
         console.error('Init is done, but session is not available yet')
