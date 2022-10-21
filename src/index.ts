@@ -21,14 +21,71 @@ function callWatcher(event: "create" | "change" | "delete", path: string, logger
     }
 }
 /**
+ * Convert an in-memory path to a simply rooted path.
+ * TODO: Eventually we should insert an artificial prefix (perhaps either `scheme` or `authority`) so that we can hang other things
+ * off the root like ATA
+ * 
  * Find the first ^ anywhere in the path and delete ^/scheme/authority from that position
  */
-function trimHat(path: string) {
+function fromInMemory(path: string) {
     const i = path.indexOf("^")
     if (i > -1) {
         return path.replace(/\^\/[0-9A-Za-z-]+\/[0-9A-Za-z-]+/, '').replace(/\/\//, '/')
     }
     return path
+}
+function toInMemory(path: string, scheme: string, authority: string) {
+    return `^/${scheme}/${authority}${path}`
+}
+function translateRequest(message: {}) {
+    // TODO: Just updateOpen for now, and using side effects instead of consing a new object
+    if ("command" in message) {
+        let msg
+        switch (message.command) {
+            case "updateOpen":
+                msg = message as ts.server.protocol.UpdateOpenRequest;
+                msg.arguments.changedFiles?.forEach(f => f.fileName = fromInMemory(f.fileName));
+                msg.arguments.openFiles?.forEach(f => f.file = fromInMemory(f.file));
+                if (msg.arguments.closedFiles) {
+                    msg.arguments.closedFiles = msg.arguments.closedFiles.map(fromInMemory);
+                }
+                break;
+            case "navtree":
+                msg = message as ts.server.protocol.NavTreeRequest;
+                msg.arguments.file = fromInMemory(msg.arguments.file);
+                break;
+            case "geterr":
+                msg = message as ts.server.protocol.GeterrRequest;
+                msg.arguments.files = msg.arguments.files.map(fromInMemory);
+                break;
+            case "getOutliningSpans":
+                msg = message as  ts.server.protocol.OutliningSpansRequest;
+                msg.arguments.file = fromInMemory(msg.arguments.file);
+                break;
+        }
+    }
+    // TODO: Also navtree
+    return message
+}
+function translateResponse(message: ts.server.protocol.Message) {
+    let msg
+    if (message.type === 'event') {
+        msg = message as ts.server.protocol.Event;
+        switch (msg.event) {
+            case "projectLoadingStart":
+            case "projectLoadingFinish":
+                msg.body.projectName = toInMemory(msg.body.projectName, 'vscode-test-web', 'mount')
+                break;
+            case "configFileDiag":
+                msg.body.triggerFile = toInMemory(msg.body.triggerFile, 'vscode-test-web', 'mount')
+                msg.body.configFile = toInMemory(msg.body.configFile, 'vscode-test-web', 'mount')
+                break;
+
+        }
+        if (msg.event === 'projectLoadingStart' || msg.event === 'projectLoadingFinish') {
+        }
+    }
+
 }
 export function createServerHost(logger: ts.server.Logger & ((x: any) => void), apiClient: ApiClient, args: string[]): ts.server.ServerHost {
     const scheme = apiClient.vscode.workspace.workspaceFolders[0].uri.scheme
@@ -41,7 +98,7 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
          * @param pollingInterval ignored in native filewatchers; only used in polling watchers
          */
         watchFile(path: string, callback: ts.FileWatcherCallback, pollingInterval?: number, options?: ts.WatchOptions): ts.FileWatcher {
-            const p = trimHat(path)
+            const p = fromInMemory(path)
             logger.info(`calling watchFile on ${path} (${p}) (${watchFiles.has(p) ? 'OLD' : 'new'})`)
             watchFiles.set(p, { path: p, callback, pollingInterval, options })
             return { close() {
@@ -49,7 +106,7 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
             } }
         },
         watchDirectory(path: string, callback: ts.DirectoryWatcherCallback, recursive?: boolean, options?: ts.WatchOptions): ts.FileWatcher {
-            const p = trimHat(path)
+            const p = fromInMemory(path)
             logger.info(`calling watchDirectory on ${path} (${p}) (${watchDirectories.has(p) ? 'OLD' : 'new'})`)
             watchDirectories.set(path, { path: p, callback, recursive, options })
             return {
@@ -131,7 +188,7 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
             // Problem: In *some* messages (all?), vscode then refers to /x.ts and ^/vscode-test-web/mount/x.ts (or ^/memfs/ts-nul-authority/x.ts)
             try {
                 logger.info('calling readFile on ' + path)
-                const bytes = fs.readFile(URI.from({ scheme, path: trimHat(path) }))
+                const bytes = fs.readFile(URI.from({ scheme, path: fromInMemory(path) }))
                 return new TextDecoder().decode(new Uint8Array(bytes).slice()) // TODO: Not sure why `bytes.slice()` isn't as good as `new Uint8Array(bytes).slice()`
                 // (common/connection.ts says that Uint8Array is only a view on the bytes which could change, which is why the slice exists)
             }
@@ -168,9 +225,9 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
         },
         fileExists(path: string): boolean {
             try {
-                logger.info(`calling fileExists on ${path} (as ${URI.from({ scheme, path: trimHat(path) })})`)
+                logger.info(`calling fileExists on ${path} (as ${URI.from({ scheme, path: fromInMemory(path) })})`)
                 // TODO: FileType.File might be correct! (need to learn about vscode's FileSystem.stat)
-                return fs.stat(URI.from({ scheme, path: trimHat(path) })).type === FileType.File
+                return fs.stat(URI.from({ scheme, path: fromInMemory(path) })).type === FileType.File
             }
             catch (e) {
                 logger.info(`Error fs.fileExists for ${path}`)
@@ -180,9 +237,9 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
         },
         directoryExists(path: string): boolean {
             try {
-                logger.info(`calling directoryExists on ${path} (as ${URI.from({ scheme, path: trimHat(path) })})`)
+                logger.info(`calling directoryExists on ${path} (as ${URI.from({ scheme, path: fromInMemory(path) })})`)
                 // TODO: FileType.Directory might be correct! (need to learn about vscode's FileSystem.stat)
-                return fs.stat(URI.from({ scheme, path: trimHat(path) })).type === FileType.Directory
+                return fs.stat(URI.from({ scheme, path: fromInMemory(path) })).type === FileType.Directory
             }
             catch (e) {
                 logger.info(`Error fs.directoryExists for ${path}`)
@@ -192,9 +249,9 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
         },
         createDirectory(path: string): void {
             try {
-                logger.info(`calling createDirectory on ${path} (as ${URI.from({ scheme, path: trimHat(path) })})`)
+                logger.info(`calling createDirectory on ${path} (as ${URI.from({ scheme, path: fromInMemory(path) })})`)
                 // TODO: FileType.Directory might be correct! (need to learn about vscode's FileSystem.stat)
-                fs.createDirectory(URI.from({ scheme, path: trimHat(path) }))
+                fs.createDirectory(URI.from({ scheme, path: fromInMemory(path) }))
             }
             catch (e) {
                 logger.info(`Error fs.createDirectory`)
@@ -280,7 +337,7 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
         /** webServer comments this out and says "module resolution, symlinks"
          * I don't think we support symlinks yet but module resolution should work */
         realpath(path: string): string {
-            const parts = [...root.split('/'), ...trimHat(path).split('/')]
+            const parts = [...root.split('/'), ...fromInMemory(path).split('/')]
             const out = []
             for (const part of parts) {
                 switch (part) {
@@ -295,7 +352,7 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
                         out.push(part)
                 }
             }
-            logger.info(`realpath: resolved ${path} (${trimHat(path)}) to ${'/' + out.join('/')}`)
+            logger.info(`realpath: resolved ${path} (${fromInMemory(path)}) to ${'/' + out.join('/')}`)
             return '/' + out.join('/')
         },
         // clearScreen?(): void { },
@@ -339,6 +396,8 @@ class WorkerSession extends ts.server.Session<{}> {
         this.logger.info('done constructing WorkerSession')
     }
     public send(msg: ts.server.protocol.Message) {
+        // TODO: Translate paths *back* to ^/scheme/authority/ format.. actually this should be easy.
+        translateResponse(msg)
         if (msg.type === "event" && !this.canUseEvents) {
             if (this.logger.hasLevel(ts.server.LogLevel.verbose)) {
                 this.logger.info(`Session does not support events: ignored event: ${JSON.stringify(msg)}`);
@@ -410,7 +469,7 @@ const doubleLogger: ts.server.Logger = {
 
 const serverLogger: ts.server.Logger & ((x: any) => void) = (x: any) => postMessage({ type: "log", body: JSON.stringify(x) + '\n' }) as any
 serverLogger.close = () => {}
-serverLogger.hasLevel = () => false
+serverLogger.hasLevel = level => level <= ts.server.LogLevel.verbose
 serverLogger.loggingEnabled = () => true
 serverLogger.perftrc = () => {}
 serverLogger.info = s => postMessage({ type: "log", body: s + '\n' })
@@ -419,6 +478,9 @@ serverLogger.startGroup = () => {}
 serverLogger.endGroup = () => {}
 serverLogger.getLogFileName = () => "tsserver.log"
 function initializeSession(args: string[], platform: string, connection: ClientConnection<Requests>): void {
+    // webServer.ts
+    // getWebPath
+    // ScriptInfo.ts:isDynamicFilename <-- better predicate than trimHat
     const cancellationToken = ts.server.nullCancellationToken // TODO: Switch to real cancellation when it's ready
     const serverMode = ts.LanguageServiceMode.Semantic
     const unknownServerMode = undefined
@@ -471,14 +533,12 @@ listener = async (e: any) => {
     // TODO: Instead of reusing this listener and passing its messages on to session.onMessage, I could receive another port
     // in the setup message and have session listen on that instead. Might make it easier to disconnect an existing tsserver's web host.
     if (!!session) {
-        serverLogger.info(`host got: ${JSON.stringify(e.data)}`)
         if (e.data.type === 'watch') {
             // call watcher
             callWatcher(e.data.event, e.data.path, serverLogger)
         }
         else {
-            // TODO: for file watching, intercept the messages here and call the stored callback in an async way
-            session.onMessage(e.data)
+            session.onMessage(translateRequest(e.data))
         }
     }
     else {
