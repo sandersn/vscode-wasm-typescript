@@ -10,35 +10,38 @@ Language server host for typescript using vscode's sync-api in the browser
 
 ### Cleanup
 
-[ ] point webpack hack to node_modules; link those files to locally built ones
-[ ] create one or more MessageChannels for various communication; shut down normal listener
-[ ] figure out a webpack-native way to generate tsserver.web.js if possible
-[ ] fill in missing environment files like lib.dom.d.ts
-[ ] path rewriting is pretty loosey-goosey; likely to be incorrect some of the time
+ [ ] point webpack hack to node_modules; link those files to locally built ones
+ [ ] create one or more MessageChannels for various communication; shut down normal listener
+ [ ] figure out a webpack-native way to generate tsserver.web.js if possible
+ [ ] fill in missing environment files like lib.dom.d.ts
+ [ ] path rewriting is pretty loosey-goosey; likely to be incorrect some of the time
+   - invert the logic from TypeScriptServiceClient.normalizedPath for requests
+   - invert the function from webServer.ts for responses (maybe)
 
 ### Final
 
-[ ] rewrite paths in all other request/response messages
-[ ] put files one level down from virtual root
-[ ] shut down listener created by tsserver
-[ ] think about implementing all the other ServerHost methods
+ [ ] rewrite paths in all other request/response messages
+ [ ] put files one level down from virtual root
+ [ ] shut down listener created by tsserver
+ [ ] think about implementing all the other ServerHost methods
+ [ ] add tests, dprint, etc to repo
 
 ### Done
-[x] need to update 0.2 -> 0.7.* API (once it's working properly)
-[x] including reshuffling the webpack hack if needed
-[x] need to use the settings recommended by Sheetal
-[x] ProjectService always requests a typesMap.json at the cwd
-[x] sync-api-client says fs is rooted at memfs:/sample-folder; the protocol 'memfs:' is confusing our file parsing I think
-[x] nothing ever seems to find tsconfig.json
-[x] messages aren't actually coming through, just the message from the first request
-    - fixed by simplifying the listener setup for now
-[x] once messages work, you can probably log by postMessage({ type: 'log', body: "some logging text" })
-[x] implement realpath, modifiedtime, resolvepath, then turn semantic mode on
-[x] file watching implemented with saved map of filename to callback, and forwarding
+ [x] need to update 0.2 -> 0.7.* API (once it's working properly)
+ [x] including reshuffling the webpack hack if needed
+ [x] need to use the settings recommended by Sheetal
+ [x] ProjectService always requests a typesMap.json at the cwd
+ [x] sync-api-client says fs is rooted at memfs:/sample-folder; the protocol 'memfs:' is confusing our file parsing I think
+ [x] nothing ever seems to find tsconfig.json
+ [x] messages aren't actually coming through, just the message from the first request
+     - fixed by simplifying the listener setup for now
+ [x] once messages work, you can probably log by postMessage({ type: 'log', body: "some logging text" })
+ [x] implement realpath, modifiedtime, resolvepath, then turn semantic mode on
+ [x] file watching implemented with saved map of filename to callback, and forwarding
 
 ### Also
 
-[ ] ATA will eventually need a host interface, or an improvement of the existing one (?)
+ [ ] ATA will eventually need a host interface, or an improvement of the existing one (?)
 
 ## Notes
 
