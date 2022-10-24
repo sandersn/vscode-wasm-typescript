@@ -38,7 +38,6 @@ function toInMemory(path: string, scheme: string, authority: string) {
     return `^/${scheme}/${authority}${path}`
 }
 function translateRequest(message: {}) {
-    // TODO: Just updateOpen for now, and using side effects instead of consing a new object
     if ("command" in message) {
         let msg
         switch (message.command) {
@@ -59,12 +58,15 @@ function translateRequest(message: {}) {
                 msg.arguments.files = msg.arguments.files.map(fromInMemory);
                 break;
             case "getOutliningSpans":
-                msg = message as  ts.server.protocol.OutliningSpansRequest;
-                msg.arguments.file = fromInMemory(msg.arguments.file);
+            case "configure":
+            case "quickinfo":
+            case "completionInfo":
+                msg = message as  ts.server.protocol.OutliningSpansRequest | ts.server.protocol.ConfigureRequest | ts.server.protocol.QuickInfoRequest | ts.server.protocol.CompletionsRequest;
+                if (msg.arguments.file)
+                    msg.arguments.file = fromInMemory(msg.arguments.file);
                 break;
         }
     }
-    // TODO: Also navtree
     return message
 }
 function translateResponse(message: ts.server.protocol.Message) {
@@ -79,6 +81,11 @@ function translateResponse(message: ts.server.protocol.Message) {
             case "configFileDiag":
                 msg.body.triggerFile = toInMemory(msg.body.triggerFile, 'vscode-test-web', 'mount')
                 msg.body.configFile = toInMemory(msg.body.configFile, 'vscode-test-web', 'mount')
+                break;
+            case "syntaxDiag":
+            case "semanticDiag":
+            case "suggestionDiag":
+                msg.body.file = toInMemory(msg.body.file, 'vscode-test-web', 'mount')
                 break;
 
         }
@@ -148,44 +155,6 @@ export function createServerHost(logger: ts.server.Logger & ((x: any) => void), 
         writeOutputIsTTY(): boolean { return true }, // TODO: Maybe
         // getWidthOfTerminal?(): number {},
         readFile(path) {
-            // [x] need to update 0.2 -> 0.7.* API (once it's working properly)
-            // [x] including reshuffling the webpack hack if needed
-            // [x] need to use the settings recommended by Sheetal
-            // [x] ProjectService always requests a typesMap.json at the cwd
-            // [x] sync-api-client says fs is rooted at memfs:/sample-folder; the protocol 'memfs:' is confusing our file parsing I think
-            // [ ] nothing ever seems to find tsconfig.json
-            // [ ] diagnostic messages look correct, but no error highlights show up
-            // [x] messages aren't actually coming through, just the message from the first request
-            //     - fixed by simplifying the listener setup for now
-            // [x] once messages work, you can probably log by postMessage({ type: 'log', body: "some logging text" })
-            // [x] implement realpath, modifiedtime, resolvepath, then turn semantic mode on
-            // [ ] maybe implement all the others?
-            // [ ] cancellation
-            // [x] file watching implemented with saved map of filename to callback, and forwarding
-
-            // messages received by extension AND host use paths like ^/memfs/ts-nul-authority/sample-folder/file.ts
-            // - problem: pretty sure the extension doesn't know what to do with that: it's not putting down error spans in file.ts
-            // - question: why is the extension requesting quickinfo in that URI format? And it works! (probably because the result is a tooltip, not an in-file span)
-            // - problem: weird concatenations with memfs:/ in the middle
-            // - problem: weird concatenations with ^/memfs/ts-nul-authority in the middle
-
-            // question: where is the population of sample-folder with a bunch of files happening?
-            // question: Is that location writable while it's running?
-            // but readFile is getting called with things like memfs:/sample-folder/memfs:/typesMap.json
-            //     directoryExists with /sample-folder/node_modules/@types and /node_modules/@types
-            //     same for watchDirectory
-            //     watchDirectory with /sample-folder/^ and directoryExists with /sample-folder/^/memfs/ts-nul-authority/sample-folder/workspaces/
-            //     watchFile with /sample-folder/memfs:/sample-folder/memfs:/lib.es2020.full.d.ts
-
-            // LATER:
-            // OK, so the paths that tsserver has look like this: ^/scheme/mount/whatever.ts
-            // but the paths the filesystem has look like this: scheme:/whatever.ts (not sure about 'mount', that's only when cloning from the fs)
-            // so you have to shave off the scheme that the host combined with the path and put on the scheme that the vfs is using.
-
-            // LATER 2:
-            // Some commands ask for getExecutingFilePath or getCurrentDirectory and cons up a path themselves.
-            // This works, because URI.from({ scheme, path }) matches what the fs has in it
-            // Problem: In *some* messages (all?), vscode then refers to /x.ts and ^/vscode-test-web/mount/x.ts (or ^/memfs/ts-nul-authority/x.ts)
             try {
                 logger.info('calling readFile on ' + path)
                 const bytes = fs.readFile(URI.from({ scheme, path: fromInMemory(path) }))
