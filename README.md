@@ -6,12 +6,17 @@ Language server host for typescript using vscode's sync-api in the browser
 ### Prototype
 
 - [ ] get semantic diagnostics rendering squigglies
+  - typescriptserviceclient.ts has some functions that look at `scheme` to determine some features (hasCapabilityForResource) (also getWorkspaceRootForResource)
+  - known schemes are in utils/fileSchemes.ts, but don't include vscode-test-web
+  - adding vscode-test-web in a couple places didn't help, maybe I need to be hackier
 - [ ] cancellation (not sure this is ready yet)
 
 ### Cleanup
 
-- [ ] point webpack hack to node_modules; link those files to locally built ones
+- [x] point webpack hack to node_modules; link those files to locally built ones
 - [ ] create one or more MessageChannels for various communication; shut down normal listener
+  - starting the server currently crashes because ts.sys isn't defined -- I think it's a race condition.
+    In any case it'll need to get shut down before then, which may not be possible without changing Typescript.
 - [ ] figure out a webpack-native way to generate tsserver.web.js if possible
 - [ ] fill in missing environment files like lib.dom.d.ts
 - [ ] path rewriting is pretty loosey-goosey; likely to be incorrect some of the time

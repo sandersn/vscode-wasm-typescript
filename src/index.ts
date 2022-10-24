@@ -1,7 +1,7 @@
 import * as ts from "typescript/lib/tsserverlibrary"
 import { ApiClient, FileType, Requests } from '@vscode/sync-api-client';
-import { ClientConnection, DTOs } from '@vscode/sync-api-common/browser';
-import { Utils, URI } from 'vscode-uri';
+import { ClientConnection } from '@vscode/sync-api-common/browser';
+import { URI } from 'vscode-uri';
 let listener: (e: any) => Promise<void>;
 let watchFiles: Map<string, { path: string, callback: ts.FileWatcherCallback, pollingInterval?: number, options?: ts.WatchOptions }> = new Map();
 let watchDirectories: Map<string, { path: string, callback: ts.DirectoryWatcherCallback, recursive?: boolean, options?: ts.WatchOptions }> = new Map();
