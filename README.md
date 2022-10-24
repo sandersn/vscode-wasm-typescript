@@ -5,10 +5,11 @@ Language server host for typescript using vscode's sync-api in the browser
 
 ### Prototype
 
-- [ ] get semantic diagnostics rendering squigglies
+- [x] get semantic diagnostics rendering squigglies
   - typescriptserviceclient.ts has some functions that look at `scheme` to determine some features (hasCapabilityForResource) (also getWorkspaceRootForResource)
   - known schemes are in utils/fileSchemes.ts, but don't include vscode-test-web
   - adding vscode-test-web in a couple places didn't help, maybe I need to be hackier
+  - nope, another predicate is `isWeb`, so I had to change place(s) it's used too
 - [ ] cancellation (not sure this is ready yet)
 
 ### Cleanup

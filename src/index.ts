@@ -61,7 +61,11 @@ function translateRequest(message: {}) {
             case "configure":
             case "quickinfo":
             case "completionInfo":
-                msg = message as  ts.server.protocol.OutliningSpansRequest | ts.server.protocol.ConfigureRequest | ts.server.protocol.QuickInfoRequest | ts.server.protocol.CompletionsRequest;
+            case "projectInfo":
+            case "getApplicableRefactors":
+            case "encodedSemanticClassifications-full":
+            case "getCodeFixes":
+                msg = message as ts.server.protocol.FileRequest;
                 if (msg.arguments.file)
                     msg.arguments.file = fromInMemory(msg.arguments.file);
                 break;
